@@ -1,7 +1,6 @@
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
-from pytubefix import YouTube
-from pytubefix.cli import on_progress
+import requests
 import os
 
 app = Flask(__name__)
@@ -18,17 +17,32 @@ def get_link():
     if not video_url:
         return jsonify({'success': False, 'message': 'No URL provided'}), 400
 
+    # إرسال الطلب إلى خوادم معالجة كـوبالت المفتوحة والمحمية ضد الحظر
+    cobalt_api_url = "https://api.cobalt.tools/api/json"
+    
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "url": video_url,
+        "videoQuality": "720", # جودة مدمجة ممتازة صوت وصورة تلقائياً
+        "filenameStyle": "classic"
+    }
+
     try:
-        # استخدام كود تشغيلي يحاكي متصفح الجوال لتفادي حظر سيرفرات الاستضافة
-        yt = YouTube(video_url, client='ANDROID_TESTSUITE')
+        response = requests.post(cobalt_api_url, json=payload, headers=headers, timeout=10)
+        result = response.json()
         
-        # جلب أعلى جودة MP4 تحتوي على صوت وصورة مسبقاً (مدمجة جاهزة)
-        stream = yt.streams.filter(progressive=True, file_extension='mp4').get_highest_resolution()
-        
-        if stream and stream.url:
-            return jsonify({'success': True, 'download_url': stream.url})
+        # إذا نجح جلب الرابط من الـ API المشغل
+        if response.status_code == 200 and result.get('status') == 'stream':
+            return jsonify({'success': True, 'download_url': result.get('url')})
+        elif result.get('status') == 'redirect':
+            return jsonify({'success': True, 'download_url': result.get('url')})
             
-        return jsonify({'success': False, 'message': 'Progressive stream not found'})
+        return jsonify({'success': False, 'message': result.get('text', 'Error from processing server')})
+        
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
