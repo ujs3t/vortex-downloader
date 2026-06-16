@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
-import yt_dlp
+from pytubefix import YouTube
+from pytubefix.cli import on_progress
 import os
 
 app = Flask(__name__)
@@ -17,24 +18,18 @@ def get_link():
     if not video_url:
         return jsonify({'success': False, 'message': 'No URL provided'}), 400
 
-    # إعدادات ذكية تجلب الصيغ الجاهزة مباشرة (صوت وصورة معاً) دون الحاجة لـ ffmpeg
-    ydl_opts = {
-        'format': 'best[ext=mp4]/best',  # جلب أفضل جودة MP4 تحتوي على الصوت والصورة مسبقاً
-        'quiet': True,
-        'no_warnings': True,
-    }
-
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=False)
-            download_url = info.get('url')
+        # استخدام كود تشغيلي يحاكي متصفح الجوال لتفادي حظر سيرفرات الاستضافة
+        yt = YouTube(video_url, client='ANDROID_TESTSUITE')
+        
+        # جلب أعلى جودة MP4 تحتوي على صوت وصورة مسبقاً (مدمجة جاهزة)
+        stream = yt.streams.filter(progressive=True, file_extension='mp4').get_highest_resolution()
+        
+        if stream and stream.url:
+            return jsonify({'success': True, 'download_url': stream.url})
             
-            if download_url:
-                return jsonify({'success': True, 'download_url': download_url})
-                
-        return jsonify({'success': False, 'message': 'Could not extract URL'})
+        return jsonify({'success': False, 'message': 'Progressive stream not found'})
     except Exception as e:
-        # إرجاع الخطأ الحقيقي للمساعدة في التشخيص إذا حدث شيء آخر
         return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
